@@ -44,13 +44,18 @@ BSD-style license that can be found in the LICENSE file.
       border: 0px;
       width: 300px;
     }
+
+    /* custom pseudo-element .test::x-box would become .test > *[pseudo=x-box] */
+    .test::x-box {
+       background-color: orange;
+    }
   </style>
   <div id="box-1" class="main-glyph">
     <div class="left-glyph"></div>
     <input class="comp-1-input" value="Test AAA">
   </div>
   <input class="comp-1-done" value="Test BBB">
-  <x-comp1></x-comp1>
+  <x-comp1 class="test"></x-comp1>
   <x-comp1 type="flipper"></x-comp1>
   <script type="application/dart">
 import 'dart:async';

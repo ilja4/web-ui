@@ -505,13 +505,22 @@ class Compiler {
 
   /** Run the analyzer on every input html file. */
   void _analyze() {
+    /**
+     * Pseudo-element names exposed in a component via a pseudo attribute.  The
+     * name is only available from CSS and are mangled.  The same pseudo-element
+     * in different components maps to the same mangled name (as the
+     * pseudo-element is scoped inside of the component).
+     */
+    var pseudoElements = new Map<String, String>();
     var uniqueIds = new IntIterator();
     for (var file in files) {
       if (file.isHtml) {
         _time('Analyzed contents', file.path, () =>
-            analyzeFile(file, info, uniqueIds, _messages));
+            analyzeFile(file, info, uniqueIds, pseudoElements, _messages));
       }
     }
+
+print(">>>> ${pseudoElements.toString()}");
   }
 
   /** Emit the generated code corresponding to each input file. */

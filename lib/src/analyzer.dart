@@ -56,9 +56,10 @@ FileInfo analyzeNodeForTesting(Node source, Messages messages,
  *  supplied.
  */
 void analyzeFile(SourceFile file, Map<String, FileInfo> info,
-    Iterator<int> uniqueIds, Messages messages) {
+                 Iterator<int> uniqueIds, Map<String, String> pseudoElements,
+                 Messages messages) {
   var fileInfo = info[file.path];
-  var analyzer = new _Analyzer(fileInfo, uniqueIds, messages);
+  var analyzer = new _Analyzer(fileInfo, uniqueIds, pseudoElements, messages);
   analyzer._normalize(fileInfo, info);
   analyzer.visit(file.document);
 }
@@ -70,6 +71,7 @@ class _Analyzer extends TreeVisitor {
   LibraryInfo _currentInfo;
   ElementInfo _parent;
   Iterator<int> _uniqueIds;
+  Map<String, String> _pseudoElements;
   Messages _messages;
 
   /**
@@ -86,7 +88,8 @@ class _Analyzer extends TreeVisitor {
    * Adds emitted error/warning messages to [_messages].
    * [_messages] must not be null.
    */
-  _Analyzer(this._fileInfo, this._uniqueIds, this._messages) {
+  _Analyzer(this._fileInfo, this._uniqueIds, this._pseudoElements,
+      this._messages) {
     assert(this._messages != null);
     _currentInfo = _fileInfo;
   }
@@ -425,6 +428,31 @@ class _Analyzer extends TreeVisitor {
     if (attrInfo != null) {
       info.attributes[name] = attrInfo;
     }
+
+    // Any component's custom pseudo-element(s) defined?
+    if (name == 'pseudo' && _currentInfo is ComponentInfo) {
+      _processPseudoAttribute(info.node, value.split(' '));
+    }
+  }
+
+  void _processPseudoAttribute(Node node, List<String> values) {
+    List mangledValues = [];
+    for (var pseudoElement in values) {
+      // The name must start with x- otherwise it's not a custom pseudo-element.
+      if (pseudoElement.startsWith('x-')) {
+        var newValue = _pseudoElements.putIfAbsent(pseudoElement, () =>
+            "${pseudoElement}_${_pseudoElements.length}");
+        // Mangled name of pseudo-element.
+        mangledValues.add(newValue);
+      } else {
+        _messages.warning("Custom pseudo-element must be prefixed with 'x-'.",
+            node.sourceSpan);
+        mangledValues.add(pseudoElement);
+      }
+    }
+
+    // Update the pseudo attribute with the new mangled names.
+    node.attributes['pseudo'] = mangledValues.toString();
   }
 
   /**
