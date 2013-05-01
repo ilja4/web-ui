@@ -130,11 +130,11 @@ class FileInfo extends LibraryInfo implements HtmlFileSummary {
   final Map<String, ComponentSummary> components =
       new SplayTreeMap<String, ComponentSummary>();
 
-  /** Files imported with `<link rel="component">` */
+  /** Files imported with `<link rel="import">` */
   final List<UrlInfo> componentLinks = <UrlInfo>[];
 
   /** Files imported with `<link rel="stylesheet">` */
-  final List<UrlInfo> styleSheetHref = <UrlInfo>[];
+  final List<UrlInfo> styleSheetHrefs = <UrlInfo>[];
 
   /** Root is associated with the body info. */
   ElementInfo bodyInfo;

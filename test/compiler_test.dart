@@ -5,45 +5,32 @@
 /** End-to-end tests for the [Compiler] API. */
 library compiler_test;
 
-import 'dart:async';
-import 'dart:io';
 import 'package:html5lib/dom.dart';
 import 'package:logging/logging.dart' show Level;
 import 'package:unittest/compact_vm_config.dart';
 import 'package:unittest/unittest.dart';
-import 'package:web_ui/src/compiler.dart';
-import 'package:web_ui/src/file_system.dart';
-import 'package:web_ui/src/options.dart';
-import 'testing.dart';
 import 'package:web_ui/src/messages.dart';
+
+import 'testing.dart';
 
 main() {
   useCompactVMConfiguration();
 
-  var messages;
-
-  Compiler createCompiler(Map files) {
-    var options = CompilerOptions.parse([
-        '--no-colors', '-o', 'out', 'index.html']);
-    var fs = new MockFileSystem(files);
-    messages = new Messages.silent();
-    return new Compiler(fs, options, messages);
-  }
-
   test('recursive dependencies', () {
+    var messages = new Messages.silent();
     var compiler = createCompiler({
       'index.html': '<head>'
-                    '<link rel="components" href="foo.html">'
-                    '<link rel="components" href="bar.html">'
+                    '<link rel="import" href="foo.html">'
+                    '<link rel="import" href="bar.html">'
                     '<body><x-foo></x-foo><x-bar></x-bar>'
                     '<script type="application/dart">main() {}</script>',
-      'foo.html': '<head><link rel="components" href="bar.html">'
+      'foo.html': '<head><link rel="import" href="bar.html">'
                   '<body><element name="x-foo" constructor="Foo">'
                   '<template><x-bar>',
-      'bar.html': '<head><link rel="components" href="foo.html">'
+      'bar.html': '<head><link rel="import" href="foo.html">'
                   '<body><element name="x-bar" constructor="Boo">'
                   '<template><x-foo>',
-    });
+    }, messages);
 
     compiler.run().then(expectAsync1((e) {
       MockFileSystem fs = compiler.fileSystem;
@@ -69,19 +56,20 @@ main() {
 
   group('missing files', () {
     test('main script', () {
+      var messages = new Messages.silent();
       var compiler = createCompiler({
         'index.html': '<head></head><body>'
             '<script type="application/dart" src="notfound.dart"></script>'
             '</body>',
-      });
+      }, messages);
 
       compiler.run().then(expectAsync1((e) {
         var msgs = messages.messages.where((m) =>
-            m.message.contains('notfound.dart')).toList();
+            m.message.contains('unable')).toList();
 
         expect(msgs.length, 1);
         expect(msgs[0].level, Level.SEVERE);
-        expect(msgs[0].message, contains('exception while reading file'));
+        expect(msgs[0].message, contains('unable to open file'));
         expect(msgs[0].span, isNotNull);
         expect(msgs[0].span.sourceUrl, 'index.html');
 
@@ -94,20 +82,21 @@ main() {
     });
 
     test('component html', () {
+      var messages = new Messages.silent();
       var compiler = createCompiler({
         'index.html': '<head>'
-            '<link rel="components" href="notfound.html">'
+            '<link rel="import" href="notfound.html">'
             '<body><x-foo>'
             '<script type="application/dart">main() {}</script>',
-      });
+      }, messages);
 
       compiler.run().then(expectAsync1((e) {
         var msgs = messages.messages.where((m) =>
-            m.message.contains('notfound.html')).toList();
+            m.message.contains('unable')).toList();
 
         expect(msgs.length, 1);
         expect(msgs[0].level, Level.SEVERE);
-        expect(msgs[0].message, contains('exception while reading file'));
+        expect(msgs[0].message, contains('unable to open file'));
         expect(msgs[0].span, isNotNull);
         expect(msgs[0].span.sourceUrl, 'index.html');
 
@@ -120,24 +109,25 @@ main() {
     });
 
     test('component script', () {
+      var messages = new Messages.silent();
       var compiler = createCompiler({
         'index.html': '<head>'
-            '<link rel="components" href="foo.html">'
+            '<link rel="import" href="foo.html">'
             '<body><x-foo></x-foo>'
             '<script type="application/dart">main() {}</script>'
             '</body>',
         'foo.html': '<body><element name="x-foo" constructor="Foo">'
             '<template></template>'
             '<script type="application/dart" src="notfound.dart"></script>',
-      });
+      }, messages);
 
       compiler.run().then(expectAsync1((e) {
         var msgs = messages.messages.where((m) =>
-            m.message.contains('notfound.dart')).toList();
+            m.message.contains('unable')).toList();
 
         expect(msgs.length, 1);
         expect(msgs[0].level, Level.SEVERE);
-        expect(msgs[0].message, contains('exception while reading file'));
+        expect(msgs[0].message, contains('unable to open file'));
 
         MockFileSystem fs = compiler.fileSystem;
         expect(fs.readCount,
@@ -148,32 +138,4 @@ main() {
       }));
     });
   });
-}
-
-/**
- * Abstraction around file system access to work in a variety of different
- * environments.
- */
-class MockFileSystem extends FileSystem {
-  final Map _files;
-  final Map readCount = {};
-
-  MockFileSystem(this._files);
-
-  Future readTextOrBytes(String filename) => readText(filename);
-
-  Future<String> readText(String path) {
-    readCount[path] = readCount.putIfAbsent(path, () => 0) + 1;
-    var file = _files[path];
-    if (file != null) {
-      return new Future.value(file);
-    } else {
-      return new Future.error(
-          new FileIOException('MockFileSystem: $path not found'));
-    }
-  }
-
-  // Compiler doesn't call these
-  void writeString(String outfile, String text) {}
-  Future flush() {}
 }

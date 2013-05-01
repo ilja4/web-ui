@@ -8,8 +8,7 @@ import 'dart:async';
 import 'dart:collection' show SplayTreeMap;
 import 'dart:json' as json;
 import 'package:analyzer_experimental/src/generated/ast.dart' show Directive, UriBasedDirective;
-import 'package:csslib/parser.dart' as css;
-import 'package:csslib/visitor.dart' show StyleSheet, treeToDebugString, Visitor;
+import 'package:csslib/visitor.dart' show StyleSheet, treeToDebugString;
 import 'package:html5lib/dom.dart';
 import 'package:html5lib/parser.dart';
 import 'package:source_maps/span.dart' show Span;
@@ -125,8 +124,7 @@ class Compiler {
     _tasks = new FutureGroup();
     _processed = new Set();
     _processed.add(inputFile);
-    _tasks.add(_parseHtmlFile(new UrlInfo(inputFile, null))
-        .then(_processHtmlFile));
+    _tasks.add(_parseHtmlFile(new UrlInfo(inputFile, null)));
     return _tasks.future;
   }
 
@@ -147,38 +145,52 @@ class Compiler {
 
     // Load component files referenced by [file].
     for (var link in fileInfo.componentLinks) {
-      var href = link.resolvedPath;
-      if (!_processed.contains(href)) {
-        _processed.add(href);
-        _tasks.add(_parseHtmlFile(link).then(_processHtmlFile));
-      }
+      _loadFile(link, _parseHtmlFile);
     }
 
     // Load stylesheet files referenced by [file].
-    for (var link in fileInfo.styleSheetHref) {
-      var href = link.resolvedPath;
-      if (!_processed.contains(href)) {
-        _processed.add(href);
-        _tasks.add(_parseStyleSheetFile(link).then(_processStyleSheetFile));
-      }
+    for (var link in fileInfo.styleSheetHrefs) {
+      _loadFile(link, _parseCssFile);
     }
 
     // Load .dart files being referenced in the page.
-    var src = fileInfo.externalFile;
-    if (src != null && !_processed.contains(src.resolvedPath)) {
-      _processed.add(src.resolvedPath);
-      _tasks.add(_parseDartFile(src).then(_processDartFile));
+    _loadFile(fileInfo.externalFile, _parseDartFile);
+
+    // Process any @imports inside of a <style> tag.
+    var urlInfos = findUrlsImported(fileInfo, fileInfo.inputPath,
+        _pathMapper.packageRoot, file.document, _messages, options);
+    for (var urlInfo in urlInfos) {
+      _loadFile(urlInfo, _parseCssFile);
     }
 
     // Load .dart files being referenced in components.
     for (var component in fileInfo.declaredComponents) {
-      var src = component.externalFile;
-      if (src != null && !_processed.contains(src.resolvedPath)) {
-        _processed.add(src.resolvedPath);
-        _tasks.add(_parseDartFile(src).then(_processDartFile));
+      if (component.externalFile != null) {
+        _loadFile(component.externalFile, _parseDartFile);
       } else if (component.userCode != null) {
         _processImports(component);
       }
+
+      // Process any @imports inside of the <style> tag in a component.
+      var urlInfos = findUrlsImported(component,
+          component.declaringFile.inputPath, _pathMapper.packageRoot,
+          component.element, _messages, options);
+      for (var urlInfo in urlInfos) {
+        _loadFile(urlInfo, _parseCssFile);
+      }
+    }
+  }
+
+  /**
+   * Helper function to load [urlInfo] and parse it using [loadAndParse] if it
+   * hasn't been loaded before.
+   */
+  void _loadFile(UrlInfo urlInfo, Future loadAndParse(UrlInfo inputUrl)) {
+    if (urlInfo == null) return;
+    var resolvedPath = urlInfo.resolvedPath;
+    if (!_processed.contains(resolvedPath)) {
+      _processed.add(resolvedPath);
+      _tasks.add(loadAndParse(urlInfo));
     }
   }
 
@@ -208,49 +220,61 @@ class Compiler {
   }
 
   /** Parse an HTML file. */
-  Future<SourceFile> _parseHtmlFile(UrlInfo inputPath) {
+  Future _parseHtmlFile(UrlInfo inputPath) {
     if (!_pathMapper.checkInputPath(inputPath, _messages)) {
       return new Future<SourceFile>.value(null);
     }
     var filePath = inputPath.resolvedPath;
     return fileSystem.readTextOrBytes(filePath)
+        .catchError((e) => _readError(e, inputPath))
         .then((source) {
+          if (source == null) return;
           var file = new SourceFile(filePath);
           file.document = _time('Parsed', filePath,
               () => parseHtml(source, filePath, _messages));
-          return file;
-        })
-        .catchError((e) => _readError(e, inputPath));
+          _processHtmlFile(file);
+        });
   }
 
   /** Parse a Dart file. */
-  Future<SourceFile> _parseDartFile(UrlInfo inputPath) {
+  Future _parseDartFile(UrlInfo inputPath) {
     if (!_pathMapper.checkInputPath(inputPath, _messages)) {
       return new Future<SourceFile>.value(null);
     }
     var filePath = inputPath.resolvedPath;
     return fileSystem.readText(filePath)
-        .then((code) => new SourceFile(filePath, type: SourceFile.DART)
-            ..code = code)
-        .catchError((e) => _readError(e, inputPath));
+        .catchError((e) => _readError(e, inputPath))
+        .then((code) {
+          if (code == null) return;
+          var file = new SourceFile(filePath, type: SourceFile.DART);
+          file.code = code;
+          _processDartFile(file);
+        });
   }
 
   /** Parse a stylesheet file. */
-  Future<SourceFile> _parseStyleSheetFile(UrlInfo inputPath) {
-    if (!_pathMapper.checkInputPath(inputPath, _messages)) {
+  Future _parseCssFile(UrlInfo inputPath) {
+    if (!options.processCss ||
+        !_pathMapper.checkInputPath(inputPath, _messages)) {
       return new Future<SourceFile>.value(null);
     }
     var filePath = inputPath.resolvedPath;
     return fileSystem.readText(filePath)
-        .then((code) => new SourceFile(filePath, type: SourceFile.STYLESHEET)
-            ..code = code)
-        .catchError((e) => _readError(e, inputPath, isWarning: true));
+        .catchError((e) => _readError(e, inputPath, isWarning: true))
+        .then((code) {
+          if (code == null) return;
+          var file = new SourceFile(filePath, type: SourceFile.STYLESHEET);
+          file.code = code;
+          _processCssFile(file);
+        });
   }
 
 
   SourceFile _readError(error, UrlInfo inputPath, {isWarning: false}) {
-    var message = 'exception while reading file "${inputPath.resolvedPath}", '
-        'original message:\n $error';
+    var message = 'unable to open file "${inputPath.resolvedPath}"';
+    if (options.verbose) {
+      message = '$message. original message:\n $error';
+    }
     if (isWarning) {
       _messages.warning(message, inputPath.sourceSpan);
     } else {
@@ -284,16 +308,15 @@ class Compiler {
         if (uri.startsWith('package:web_ui/observe')) {
           _useObservers = true;
         }
-      } else if (!_processed.contains(src)) {
-        _processed.add(src);
-        var resolvedPath = new UrlInfo(src,
+      } else {
+        var urlInfo = new UrlInfo(src,
             library.userCode.sourceFile.span(directive.offset, directive.end));
-        _tasks.add(_parseDartFile(resolvedPath).then(_processDartFile));
+        _loadFile(urlInfo, _parseDartFile);
       }
     }
   }
 
-  void _processStyleSheetFile(SourceFile cssFile) {
+  void _processCssFile(SourceFile cssFile) {
     if (cssFile == null) return;
 
     files.add(cssFile);
@@ -301,33 +324,30 @@ class Compiler {
     var fileInfo = new FileInfo(cssFile.path);
     info[cssFile.path] = fileInfo;
 
-    var styleSheet = _parseCss(cssFile.code, cssFile.path, _messages, options);
+    var styleSheet = parseCss(cssFile.code, cssFile.path, _messages, options);
     if (styleSheet != null) {
-      var urlInfos = _time('CSS imports', cssFile.path, () =>
-          (new CssImports(_pathMapper.packageRoot, fileInfo)
-              ..visitTree(styleSheet)).urlInfos);
-
+      _resolveStyleSheetImports(fileInfo, cssFile.path, styleSheet);
       fileInfo.styleSheets.add(styleSheet);
+    }
+  }
 
-      for (var urlInfo in urlInfos) {
-        if (urlInfo == null) break;
+  /** Load and parse all style sheets referenced with an @imports. */
+  void _resolveStyleSheetImports(FileInfo fileInfo, String processingFile,
+                                 StyleSheet styleSheet) {
+    var urlInfos = _time('CSS imports', processingFile, () =>
+        findImportsInStyleSheet(styleSheet, _pathMapper.packageRoot,
+            fileInfo.inputPath));
 
-        fileInfo.styleSheetHref.add(urlInfo);
-
-        // Load any @imported stylesheet files referenced in this style sheet.
-        var url = urlInfo.resolvedPath;
-        if (!_processed.contains(url)) {
-          _processed.add(url);
-          _tasks.add(_parseStyleSheetFile(urlInfo)
-              .then(_processStyleSheetFile));
-        }
-      }
+    for (var urlInfo in urlInfos) {
+      if (urlInfo == null) break;
+      // Load any @imported stylesheet files referenced in this style sheet.
+      _loadFile(urlInfo, _parseCssFile);
     }
   }
 
   String _getDirectivePath(LibraryInfo libInfo, Directive directive) {
     var uriDirective = (directive as UriBasedDirective).uri;
-    var uri = uriDirective.value;
+    var uri = (uriDirective as dynamic).value;
     if (uri.startsWith('dart:')) return null;
 
     if (uri.startsWith('package:')) {
@@ -521,6 +541,11 @@ class Compiler {
     }
 
 print(">>>> ${pseudoElements.toString()}");
+
+    // Analyze all CSS files.
+    _time('Analyzed Style Sheets', '', () =>
+        analyzeCss(_pathMapper.packageRoot, files, info, _messages,
+            warningsAsErrors: options.warningsAsErrors));
   }
 
   /** Emit the generated code corresponding to each input file. */
@@ -530,9 +555,6 @@ print(">>>> ${pseudoElements.toString()}");
       _time('Codegen', file.path, () {
         var fileInfo = info[file.path];
         cleanHtmlNodes(fileInfo);
-        if (!fileInfo.isEntryPoint) {
-          _processStylesheet(fileInfo, messages: _messages, options: options);
-        }
         fixupHtmlCss(fileInfo, options);
         _emitComponents(fileInfo);
       });
@@ -722,65 +744,5 @@ print(">>>> ${pseudoElements.toString()}");
     message.write(filename);
     return time(message.toString(), callback,
         printTime: options.verbose || printTime);
-  }
-}
-
-/** Parse all stylesheet for polyfilling assciated with [info]. */
-void _processStylesheet(info, {Messages messages : null,
-                               CompilerOptions options : null}) {
-  new _ProcessCss(messages, options).visit(info);
-}
-
-// TODO(terry): Add --checked when fully implemented and error handling.
-StyleSheet _parseCss(String content, String sourcePath, Messages messages,
-                     CompilerOptions opts) {
-  if (!content.trim().isEmpty) {
-    var errs = [];
-
-    // TODO(terry): Add --checked when fully implemented and error handling.
-    var stylesheet = css.parse(content, errors: errs, options:
-        [opts.warningsAsErrors ? '--warnings_as_errors' : '', 'memory']);
-
-    // Note: errors aren't fatal in HTML (unless strict mode is on).
-    // So just print them as warnings.
-    for (var e in errs) {
-      messages.warning(e.message, e.span);
-    }
-
-    return stylesheet;
-  }
-}
-
-/** Post-analysis of style sheet; parsed ready for emitting with polyfill. */
-class _ProcessCss extends InfoVisitor {
-  final Messages messages;
-  final CompilerOptions options;
-  ComponentInfo component;
-
-  _ProcessCss(this.messages, this.options);
-
-  void visitComponentInfo(ComponentInfo info) {
-    var oldComponent = component;
-    component = info;
-
-    super.visitComponentInfo(info);
-
-    component = oldComponent;
-  }
-
-  void visitElementInfo(ElementInfo info) {
-    if (component != null) {
-      var node = info.node;
-      if (node.tagName == 'style' && node.attributes.containsKey("scoped")) {
-        // Parse the contents of the scoped style tag.
-        var styleSheet = _parseCss(node.nodes.single.value,
-            component.declaringFile.inputPath, messages, options);
-        if (styleSheet != null) {
-          component.styleSheets.add(styleSheet);
-        }
-      }
-    }
-
-    super.visitElementInfo(info);
   }
 }

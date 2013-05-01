@@ -63,14 +63,14 @@ class PathMapper {
     var parentDir = '..${path.separator}';
     if (!path.relative(canonicalized, from: _outputDir).startsWith(parentDir)) {
       messages.error(
-          'The file ${input} cannot be processed. '
+          'The file ${input.resolvedPath} cannot be processed. '
           'Files cannot be under the output folder (${_outputDir}).',
           input.sourceSpan);
       return false;
     }
     if (path.relative(canonicalized, from: _baseDir).startsWith(parentDir)) {
       messages.error(
-          'The file ${input} cannot be processed. '
+          'The file ${input.resolvedPath} cannot be processed. '
           'All processed files must be under the base folder (${_baseDir}), you'
           ' can specify the base folder using the --basedir flag.',
           input.sourceSpan);
@@ -105,7 +105,7 @@ class PathMapper {
    * `package:` imports work.
    *
    * To make it possible to share components through pub, we allow using tags of
-   * the form `<link rel="component" href="packages/...">`, so that you can
+   * the form `<link rel="import" href="packages/...">`, so that you can
    * refer to components within the packages symlink.  Regardless of whether an
    * --out option was given to the compiler, we don't want to generate files
    * inside `packages/` for those components.  Instead we will generate such
