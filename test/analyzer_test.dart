@@ -728,7 +728,7 @@ main() {
 
       var quuxElement = doc.query('element');
       expect(quuxElement, isNotNull);
-      analyzeFile(srcFile, {'main.html': info }, new IntIterator(),
+      analyzeFile(srcFile, {'main.html': info }, new IntIterator(), new Map(),
           messages);
 
       expect(info.components.length, equals(1));
@@ -873,7 +873,7 @@ main() {
       var info = analyzeDefinitions(srcFile, '', messages);
       expect(info.declaredComponents.length, equals(1));
 
-      analyzeFile(srcFile, { 'main.html': info }, new IntIterator(),
+      analyzeFile(srcFile, { 'main.html': info }, new IntIterator(), new Map(),
           messages);
       expect(info.components.keys, equals(['x-foo']));
       var foo = info.query('span');
@@ -974,7 +974,8 @@ main() {
 
       var srcFile = new SourceFile('main.html')..document = doc;
       var info = analyzeDefinitions(srcFile, '', messages);
-      analyzeFile(srcFile, { 'main.html': info }, new IntIterator(), messages);
+      analyzeFile(srcFile, { 'main.html': info }, new IntIterator(), new Map(),
+          messages);
     });
 
     test('components extends another component', () {

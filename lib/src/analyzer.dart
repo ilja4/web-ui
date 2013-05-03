@@ -48,7 +48,7 @@ FileInfo analyzeDefinitions(SourceFile file, String packageRoot,
 FileInfo analyzeNodeForTesting(Node source, Messages messages,
     {String filepath: 'mock_testing_file.html'}) {
   var result = new FileInfo(filepath);
-  new _Analyzer(result, new IntIterator(), messages).visit(source);
+  new _Analyzer(result, new IntIterator(), new Map(), messages).visit(source);
   return result;
 }
 
@@ -443,8 +443,12 @@ class _Analyzer extends TreeVisitor {
     for (var pseudoElement in values) {
       // The name must start with x- otherwise it's not a custom pseudo-element.
       if (pseudoElement.startsWith('x-')) {
+        // TODO(terry): Generate another unique ID (however, pseudo id and
+        //              element ids or class names could all overlap currently
+        //              they are unique.
+        _uniqueIds.moveNext();
         var newValue = _pseudoElements.putIfAbsent(pseudoElement, () =>
-            "${pseudoElement}_${_pseudoElements.length}");
+            "${pseudoElement}_${_uniqueIds.current}");
         // Mangled name of pseudo-element.
         mangledValues.add(newValue);
       } else {
@@ -455,7 +459,7 @@ class _Analyzer extends TreeVisitor {
     }
 
     // Update the pseudo attribute with the new mangled names.
-    node.attributes['pseudo'] = mangledValues.toString();
+    node.attributes['pseudo'] = mangledValues.join(' ').toString();
   }
 
   /**
@@ -1075,11 +1079,10 @@ class BindingParser {
   }
 }
 
-
 void analyzeCss(String packageRoot, List<SourceFile> files,
-                Map<String, FileInfo> info, Messages messages,
-                {warningsAsErrors: false}) {
-  var analyzer = new _AnalyzerCss(packageRoot, info, messages,
+                Map<String, FileInfo> info, Map<String, String> pseudoElements,
+                Messages messages, {warningsAsErrors: false}) {
+  var analyzer = new _AnalyzerCss(packageRoot, info, pseudoElements, messages,
       warningsAsErrors);
   for (var file in files) analyzer.process(file);
   analyzer.normalize();
@@ -1088,13 +1091,14 @@ void analyzeCss(String packageRoot, List<SourceFile> files,
 class _AnalyzerCss {
   final String packageRoot;
   final Map<String, FileInfo> info;
+  final Map<String, String> _pseudoElements;
   final Messages _messages;
   final bool _warningsAsErrors;
 
   Set<StyleSheet> allStyleSheets = new Set<StyleSheet>();
 
-  _AnalyzerCss(this.packageRoot, this.info, this._messages,
-      this._warningsAsErrors);
+  _AnalyzerCss(this.packageRoot, this.info, this._pseudoElements,
+               this._messages, this._warningsAsErrors);
 
   /**
    * Run the analyzer on every file that is a style sheet or any component that
@@ -1116,6 +1120,8 @@ class _AnalyzerCss {
       // Add to list of all style sheets analyzed.
       allStyleSheets.addAll(all);
     }
+
+    processCustomPseudoElements();
   }
 
   void normalize() {
@@ -1157,6 +1163,11 @@ class _AnalyzerCss {
     for (var tree in styleSheets) new ResolveVarUsages(varDefs).visitTree(tree);
 
     return styleSheets;
+  }
+
+  processCustomPseudoElements() {
+    var polyFiller = new PseudoElementPolyFill(_pseudoElements);
+    for (var tree in allStyleSheets) polyFiller.visitTree(tree);
   }
 
   /**

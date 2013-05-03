@@ -469,6 +469,51 @@ test_component_var() {
   });
 }
 
+test_pseudo_element() {
+  var messages = new Messages.silent();
+  var compiler = createCompiler({
+    'index.html': '<head>'
+                  '<link rel="import" href="foo.html">'
+                  '<style>'
+                    '.test::x-foo { background-color: red; }'
+                  '</style>'
+                  '<body>'
+                    '<x-foo class=test></x-foo>'
+                    '<x-foo></x-foo>'
+                  '<script type="application/dart">main() {}</script>',
+    'foo.html': '<head>'
+                '<body><element name="x-foo" constructor="Foo">'
+                '<template>'
+                  '<div pseudo="x-foo">'
+                    '<div>Test</div>'
+                  '</div>'
+                '</template>',
+    }, messages);
+
+    compiler.run().then(expectAsync1((e) {
+      MockFileSystem fs = compiler.fileSystem;
+      expect(fs.readCount, equals({
+        'index.html': 1,
+        'foo.html': 1,
+      }), reason: 'Actual:\n  ${fs.readCount}');
+
+      var outputs = compiler.output.map((o) => o.path);
+      expect(outputs, equals([
+        'out/foo.html.dart',
+        'out/foo.html.dart.map',
+        'out/index.html.dart',
+        'out/index.html.dart.map',
+        'out/index.html_bootstrap.dart',
+        'out/index.html',
+      ]));
+
+      for (var file in compiler.output) {
+        print(file.path);
+        print(file.contents);
+      }
+    }));
+}
+
 main() {
   useCompactVMConfiguration();
 
@@ -477,4 +522,5 @@ main() {
   test('test_simple_import', test_simple_import);
   test('test_imports', test_imports);
   test('test_component_var', test_component_var);
+  test('test_pseudo_element', test_pseudo_element);
 }

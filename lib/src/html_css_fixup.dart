@@ -21,9 +21,6 @@ import 'utils.dart';
 /**
  *  If processCss is enabled, prefix any component's HTML attributes for id or
  *  class to reference the mangled CSS class name or id.
- *
- *  Adds prefix error/warning messages to [messages], if [messages] is
- *  supplied.
  */
 void fixupHtmlCss(FileInfo fileInfo, CompilerOptions opts) {
   // Walk the HTML tree looking for class names or id that are in our parsed
@@ -324,6 +321,57 @@ class RemoveVarDefinitions extends Visitor {
   void visitDeclarationGroup(DeclarationGroup node) {
     node.declarations.removeWhere((e) => e is VarDefinition);
     super.visitDeclarationGroup(node);
+  }
+}
+
+/**
+ * Process all selectors looking for a pseudo-element in a selector.  If the
+ * name is found in our list of known pseudo-elements that was build by parsing
+ * components look for attribute name of pseudo the value is the name of the
+ * pseudo-element.  The name is mangled so Dart/JS can't directly do anything
+ * with this name only CSS can access a custom pseudo-element.
+ */
+class PseudoElementPolyFill extends Visitor {
+  final Map<String, String> _pseudoElements;
+
+  PseudoElementPolyFill(this._pseudoElements);
+
+  void visitTree(StyleSheet tree) => visitStyleSheet(tree);
+
+  visitSelector(Selector node) {
+    List<SimpleSelectorSequence> selectorSeqs = node.simpleSelectorSequences;
+    for (var index = 0; index < selectorSeqs.length; index++) {
+      var selector = selectorSeqs[index];
+      var simpleSelector = selector.simpleSelector;
+      if (simpleSelector is PseudoElementSelector) {
+        if (_pseudoElements.containsKey(simpleSelector.name)) {
+          // Pseudo Element is a custom element.
+          var mangledName = _pseudoElements[simpleSelector.name];
+
+          var orgSpan = selector.span;
+
+          // Change the custom pseudo-element to be a child of any thing who's
+          // pseudo attribute is the namgled custom pseudo element name. e.g,
+          //
+          //    .test::x-box
+          //
+          // would become:
+          //
+          //    .test > *[pseudo="x-box_2"]
+
+          var attrSelector = new AttributeSelector(
+              new Identifier('pseudo', orgSpan), css.TokenKind.EQUALS,
+              mangledName, orgSpan);
+          // The wildcard * namespace selector.
+          var wildCard = new ElementSelector(new Wildcard(orgSpan), orgSpan);
+          var replaceSelectors = [
+              new SimpleSelectorSequence(wildCard, orgSpan,
+                  css.TokenKind.COMBINATOR_GREATER),
+              new SimpleSelectorSequence(attrSelector, orgSpan)];
+          selectorSeqs.replaceRange(index, index + 1, replaceSelectors);
+        }
+      }
+    }
   }
 }
 

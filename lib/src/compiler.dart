@@ -106,12 +106,35 @@ class Compiler {
       return new Future.value(null);
     }
     return _parseAndDiscover(_mainPath).then((_) {
-      _analyze();
+      // TODO(terry): Have outstanding email with web-component folks on what
+      //              it means for composite web components are children or
+      //              inherited component's pseudo-element inherited/delegated?
+      // TODO(terry): What about known pseudo-elemnents (e.g., :first-line,
+      //              :first-letter, :before and :after) should these names
+      //              another other element names generate a warning?
+      //              Otherwise, .test::first-letter should it be first-letter
+      //              of element or first-letter of component (could super be
+      //              called)?
+      /**
+       * Pseudo-element names exposed in a component via a pseudo attribute.
+       * The name is only available from CSS (not Dart code) so they're mangled.
+       * The same pseudo-element in different components maps to the same
+       * mangled name (as the pseudo-element is scoped inside of the component).
+       */
+      var pseudoElements = new Map<String, String>();
+
+      _analyze(pseudoElements);
+
+      // Analyze all CSS files.
+      _time('Analyzed Style Sheets', '', () =>
+          analyzeCss(_pathMapper.packageRoot, files, info, pseudoElements,
+              _messages, warningsAsErrors: options.warningsAsErrors));
+
       // TODO(jmesserly): need to go through our errors, and figure out if some
       // of them should be warnings instead.
       if (_messages.hasErrors) return;
       _transformDart();
-      _emit();
+      _emit(pseudoElements);
     });
   }
 
@@ -524,14 +547,7 @@ class Compiler {
   }
 
   /** Run the analyzer on every input html file. */
-  void _analyze() {
-    /**
-     * Pseudo-element names exposed in a component via a pseudo attribute.  The
-     * name is only available from CSS and are mangled.  The same pseudo-element
-     * in different components maps to the same mangled name (as the
-     * pseudo-element is scoped inside of the component).
-     */
-    var pseudoElements = new Map<String, String>();
+  _analyze(Map<String, String> pseudoElements) {
     var uniqueIds = new IntIterator();
     for (var file in files) {
       if (file.isHtml) {
@@ -539,31 +555,24 @@ class Compiler {
             analyzeFile(file, info, uniqueIds, pseudoElements, _messages));
       }
     }
-
-print(">>>> ${pseudoElements.toString()}");
-
-    // Analyze all CSS files.
-    _time('Analyzed Style Sheets', '', () =>
-        analyzeCss(_pathMapper.packageRoot, files, info, _messages,
-            warningsAsErrors: options.warningsAsErrors));
   }
 
   /** Emit the generated code corresponding to each input file. */
-  void _emit() {
+  void _emit(Map<String, String> pseudoElements) {
     for (var file in files) {
       if (file.isDart || file.isStyleSheet) continue;
       _time('Codegen', file.path, () {
         var fileInfo = info[file.path];
         cleanHtmlNodes(fileInfo);
         fixupHtmlCss(fileInfo, options);
-        _emitComponents(fileInfo);
+        _emitComponents(fileInfo, pseudoElements);
       });
     }
 
     var entryPoint = files[0];
     assert(info[entryPoint.path].isEntryPoint);
     _emitMainDart(entryPoint);
-    _emitMainHtml(entryPoint);
+    _emitMainHtml(entryPoint, pseudoElements);
 
     assert(_unqiueOutputs());
   }
@@ -590,7 +599,7 @@ print(">>>> ${pseudoElements.toString()}");
 
   // TODO(jmesserly): refactor this out of Compiler.
   /** Generate an html file with the (trimmed down) main html page. */
-  void _emitMainHtml(SourceFile file) {
+  void _emitMainHtml(SourceFile file, Map<String, String> pseudoElements) {
     var fileInfo = info[file.path];
 
     var bootstrapName = '${path.basename(file.path)}_bootstrap.dart';
@@ -602,9 +611,9 @@ print(">>>> ${pseudoElements.toString()}");
           _useObservers)));
 
     var document = file.document;
-    var hasCss = _emitAllCss();
+    var hasCss = _emitAllCss(pseudoElements);
     transformMainHtml(document, fileInfo, _pathMapper, hasCss,
-        options.rewriteUrls, _messages);
+        options.rewriteUrls, _messages, customPseudos: pseudoElements);
 
     document.body.nodes.add(parseFragment(
         '<script type="application/dart" src="$bootstrapOutName"></script>'));
@@ -619,7 +628,7 @@ print(">>>> ${pseudoElements.toString()}");
    * Generate an CSS file for all style sheets (main and components).
    * Returns true if a file was generated, otherwise false.
    */
-  bool _emitAllCss() {
+  bool _emitAllCss(Map<String, String> pseudoElements) {
     if (!options.processCss) return false;
 
     var buff = new StringBuffer();
@@ -644,7 +653,7 @@ print(">>>> ${pseudoElements.toString()}");
           css.write(
               '/* Auto-generated from style sheet href = ${file.path} */\n'
               '/* DO NOT EDIT. */\n\n');
-          css.write(emitStyleSheet(styleSheet));
+          css.write(emitStyleSheet(styleSheet, pseudoElements));
           css.write('\n\n');
         }
 
@@ -675,7 +684,8 @@ print(">>>> ${pseudoElements.toString()}");
                 '/* ==================================================== \n'
                 '   Component ${component.tagName} stylesheet \n'
                 '   ==================================================== */\n');
-            buff.write(emitStyleSheet(styleSheet, component.tagName));
+            buff.write(emitStyleSheet(styleSheet, pseudoElements,
+                component.tagName));
             buff.write('\n\n');
           }
         }
@@ -690,7 +700,7 @@ print(">>>> ${pseudoElements.toString()}");
   }
 
   /** Emits the Dart code for all components in [fileInfo]. */
-  void _emitComponents(FileInfo fileInfo) {
+  void _emitComponents(FileInfo fileInfo, Map<String, String> pseudoElements) {
     for (var component in fileInfo.declaredComponents) {
       // TODO(terry): Handle one stylesheet per component see fixupHtmlCss.
       if (component.styleSheets.length > 1 && options.processCss) {
@@ -700,7 +710,7 @@ print(">>>> ${pseudoElements.toString()}");
             'Component has more than one stylesheet - first stylesheet used.',
             span);
       }
-      var printer = new WebComponentEmitter(fileInfo, _messages)
+      var printer = new WebComponentEmitter(fileInfo, pseudoElements, _messages)
           .run(component, _pathMapper, _edits[component.userCode]);
       var codePath = component.externalFile != null
           ? component.externalFile.resolvedPath : null;

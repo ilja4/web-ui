@@ -419,9 +419,12 @@ class RecursiveEmitter extends InfoVisitor {
  * with prefix_ (if prefix is non-null).
  */
 class StyleSheetEmitter extends CssPrinter {
+  final Map<String, String> _pseudoElements;
   final String _prefix;
 
-  StyleSheetEmitter(this._prefix);
+  SimpleSelector previousSelector;
+
+  StyleSheetEmitter(this._prefix, this._pseudoElements);
 
   void visitClassSelector(ClassSelector node) {
     if (_prefix == null) {
@@ -438,17 +441,24 @@ class StyleSheetEmitter extends CssPrinter {
       emit('#${_prefix}_${node.name}');
     }
   }
+
+  visitSelector(Selector node) {
+    super.visitSelector(node);
+  }
 }
 
 /** Helper function to emit the contents of the style tag. */
-String emitStyleSheet(StyleSheet ss, [String prefix]) =>
-  ((new StyleSheetEmitter(prefix))..visitTree(ss, pretty: true)).toString();
+String emitStyleSheet(StyleSheet ss, Map<String, String> pseudoElements,
+                      [String prefix]) =>
+  ((new StyleSheetEmitter(prefix, pseudoElements))..
+      visitTree(ss, pretty: true)).toString();
 
 /** Generates the class corresponding to a single web component. */
 class WebComponentEmitter extends RecursiveEmitter {
   final Messages messages;
+  final Map<String, String> pseudoElements;
 
-  WebComponentEmitter(FileInfo info, this.messages)
+  WebComponentEmitter(FileInfo info, this.pseudoElements, this.messages)
       : super(info, new Context(isClass: true, indent: 1));
 
   CodePrinter run(ComponentInfo info, PathMapper pathMapper,
@@ -490,7 +500,7 @@ class WebComponentEmitter extends RecursiveEmitter {
         // TODO(terry): Only one style tag per component.
         var styleSheet =
             '<style scoped>\n'
-            '${emitStyleSheet(info.styleSheets[0])}'
+            '${emitStyleSheet(info.styleSheets[0], pseudoElements)}'
             '\n</style>';
         var template = elemInfo.node;
         template.insertBefore(new Element.html(styleSheet),
@@ -673,7 +683,7 @@ String _clearFields(Declarations declarations) {
 
 /**
  * An (runtime) expression to create the [node]. It always includes the node's
- * attributes, but only includes children nodes if [includeChildren] is true.
+ * attributes.
  */
 String _emitCreateHtml(Node node, Declarations statics) {
   if (node is Text) {
@@ -711,8 +721,10 @@ String _emitCreateHtml(Node node, Declarations statics) {
 
 /** Trim down the html for the main html page. */
 void transformMainHtml(Document document, FileInfo fileInfo,
-    PathMapper pathMapper, bool hasCss, bool rewriteUrls, Messages messages) {
+                       PathMapper pathMapper, bool hasCss, bool rewriteUrls,
+                       Messages messages, {Map<String, String> customPseudos}) {
 
+  customPseudos = customPseudos == null ? new Map() : customPseudos;
   var filePath = fileInfo.inputPath;
 
   bool dartLoaderFound = false;
@@ -751,7 +763,7 @@ void transformMainHtml(Document document, FileInfo fileInfo,
   if (styles.length > 0) {
     var allCss = new StringBuffer();
     fileInfo.styleSheets.forEach((styleSheet) =>
-        allCss.write(emitStyleSheet(styleSheet)));
+        allCss.write(emitStyleSheet(styleSheet, customPseudos)));
     styles[0].nodes.clear();
     styles[0].nodes.add(new Text(allCss.toString()));
     for (var i = styles.length - 1; i > 0 ; i--) {

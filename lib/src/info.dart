@@ -586,7 +586,7 @@ class TemplateInfo extends ElementInfo {
  * It is generated outside of the analyzer (in the emitter), so it is passed
  * here as an argument.
  */
-typedef String ActionDefinition(String elemVarName);
+typedef String ActionDefinition(String elementVarName);
 
 
 /**
