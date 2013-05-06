@@ -419,12 +419,9 @@ class RecursiveEmitter extends InfoVisitor {
  * with prefix_ (if prefix is non-null).
  */
 class StyleSheetEmitter extends CssPrinter {
-  final Map<String, String> _pseudoElements;
   final String _prefix;
 
-  SimpleSelector previousSelector;
-
-  StyleSheetEmitter(this._prefix, this._pseudoElements);
+  StyleSheetEmitter(this._prefix);
 
   void visitClassSelector(ClassSelector node) {
     if (_prefix == null) {
@@ -448,17 +445,15 @@ class StyleSheetEmitter extends CssPrinter {
 }
 
 /** Helper function to emit the contents of the style tag. */
-String emitStyleSheet(StyleSheet ss, Map<String, String> pseudoElements,
-                      [String prefix]) =>
-  ((new StyleSheetEmitter(prefix, pseudoElements))..
+String emitStyleSheet(StyleSheet ss, [String prefix]) =>
+  ((new StyleSheetEmitter(prefix))..
       visitTree(ss, pretty: true)).toString();
 
 /** Generates the class corresponding to a single web component. */
 class WebComponentEmitter extends RecursiveEmitter {
   final Messages messages;
-  final Map<String, String> pseudoElements;
 
-  WebComponentEmitter(FileInfo info, this.pseudoElements, this.messages)
+  WebComponentEmitter(FileInfo info, this.messages)
       : super(info, new Context(isClass: true, indent: 1));
 
   CodePrinter run(ComponentInfo info, PathMapper pathMapper,
@@ -500,7 +495,7 @@ class WebComponentEmitter extends RecursiveEmitter {
         // TODO(terry): Only one style tag per component.
         var styleSheet =
             '<style scoped>\n'
-            '${emitStyleSheet(info.styleSheets[0], pseudoElements)}'
+            '${emitStyleSheet(info.styleSheets[0])}'
             '\n</style>';
         var template = elemInfo.node;
         template.insertBefore(new Element.html(styleSheet),
@@ -763,7 +758,7 @@ void transformMainHtml(Document document, FileInfo fileInfo,
   if (styles.length > 0) {
     var allCss = new StringBuffer();
     fileInfo.styleSheets.forEach((styleSheet) =>
-        allCss.write(emitStyleSheet(styleSheet, customPseudos)));
+        allCss.write(emitStyleSheet(styleSheet)));
     styles[0].nodes.clear();
     styles[0].nodes.add(new Text(allCss.toString()));
     for (var i = styles.length - 1; i > 0 ; i--) {

@@ -611,7 +611,7 @@ class Compiler {
           _useObservers)));
 
     var document = file.document;
-    var hasCss = _emitAllCss(pseudoElements);
+    var hasCss = _emitAllCss();
     transformMainHtml(document, fileInfo, _pathMapper, hasCss,
         options.rewriteUrls, _messages, customPseudos: pseudoElements);
 
@@ -628,7 +628,7 @@ class Compiler {
    * Generate an CSS file for all style sheets (main and components).
    * Returns true if a file was generated, otherwise false.
    */
-  bool _emitAllCss(Map<String, String> pseudoElements) {
+  bool _emitAllCss() {
     if (!options.processCss) return false;
 
     var buff = new StringBuffer();
@@ -653,7 +653,7 @@ class Compiler {
           css.write(
               '/* Auto-generated from style sheet href = ${file.path} */\n'
               '/* DO NOT EDIT. */\n\n');
-          css.write(emitStyleSheet(styleSheet, pseudoElements));
+          css.write(emitStyleSheet(styleSheet));
           css.write('\n\n');
         }
 
@@ -684,8 +684,7 @@ class Compiler {
                 '/* ==================================================== \n'
                 '   Component ${component.tagName} stylesheet \n'
                 '   ==================================================== */\n');
-            buff.write(emitStyleSheet(styleSheet, pseudoElements,
-                component.tagName));
+            buff.write(emitStyleSheet(styleSheet, component.tagName));
             buff.write('\n\n');
           }
         }
@@ -710,7 +709,7 @@ class Compiler {
             'Component has more than one stylesheet - first stylesheet used.',
             span);
       }
-      var printer = new WebComponentEmitter(fileInfo, pseudoElements, _messages)
+      var printer = new WebComponentEmitter(fileInfo, _messages)
           .run(component, _pathMapper, _edits[component.userCode]);
       var codePath = component.externalFile != null
           ? component.externalFile.resolvedPath : null;

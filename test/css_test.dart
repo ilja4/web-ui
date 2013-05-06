@@ -507,10 +507,15 @@ test_pseudo_element() {
         'out/index.html',
       ]));
 
-      for (var file in compiler.output) {
-        print(file.path);
-        print(file.contents);
-      }
+      expect(compiler.output[0].contents.contains(
+          '<div pseudo="x-foo_2">'
+            '<div>Test</div>'
+          '</div>'), true);
+      expect(compiler.output[5].contents.contains(
+          '<style>.test > *[pseudo="x-foo_2"] {\n'
+            '  background-color: #f00;\n'
+            '}'
+          '</style>'), true);
     }));
 }
 
