@@ -476,6 +476,8 @@ test_pseudo_element() {
                   '<link rel="import" href="foo.html">'
                   '<style>'
                     '.test::x-foo { background-color: red; }'
+                    '.test::x-foo1 { color: blue; }'
+                    '.test::x-foo2 { color: green; }'
                   '</style>'
                   '<body>'
                     '<x-foo class=test></x-foo>'
@@ -486,6 +488,9 @@ test_pseudo_element() {
                 '<template>'
                   '<div pseudo="x-foo">'
                     '<div>Test</div>'
+                  '</div>'
+                  '<div pseudo="x-foo1 x-foo2">'
+                  '<div>Test</div>'
                   '</div>'
                 '</template>',
     }, messages);
@@ -506,15 +511,23 @@ test_pseudo_element() {
         'out/index.html_bootstrap.dart',
         'out/index.html',
       ]));
-
       expect(compiler.output[0].contents.contains(
           '<div pseudo="x-foo_2">'
             '<div>Test</div>'
+          '</div>'
+          '<div pseudo="x-foo1_3 x-foo2_4">'
+          '<div>Test</div>'
           '</div>'), true);
       expect(compiler.output[5].contents.contains(
           '<style>.test > *[pseudo="x-foo_2"] {\n'
             '  background-color: #f00;\n'
-            '}'
+          '}\n'
+          '.test > *[pseudo="x-foo1_3"] {\n'
+          '  color: #00f;\n'
+          '}\n'
+          '.test > *[pseudo="x-foo2_4"] {\n'
+          '  color: #008000;\n'
+          '}'
           '</style>'), true);
     }));
 }
