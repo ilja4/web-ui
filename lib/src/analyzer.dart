@@ -90,9 +90,12 @@ class _Analyzer extends TreeVisitor {
   /**
    * Adds emitted error/warning messages to [_messages].
    * [_messages] must not be null.
+   * Adds pseudo attribute vlaue found on any HTML tag to [_pseudoElements].
+   * [_pseudoElements] must not be null.
    */
   _Analyzer(this._fileInfo, this._uniqueIds, this._pseudoElements,
       this._messages) {
+    assert(this._pseudoElements != null);
     assert(this._messages != null);
     _currentInfo = _fileInfo;
   }
@@ -1097,6 +1100,11 @@ class _AnalyzerCss {
 
   Set<StyleSheet> allStyleSheets = new Set<StyleSheet>();
 
+  /**
+   * [_pseudoElements] list of known pseudo attributes found in HTML, any
+   * CSS pseudo-elements 'name::custom-element' is mapped to the manged name
+   * associated with the pseudo-element key.
+   */
   _AnalyzerCss(this.packageRoot, this.info, this._pseudoElements,
                this._messages, this._warningsAsErrors);
 
