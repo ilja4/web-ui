@@ -613,7 +613,7 @@ class Compiler {
     var document = file.document;
     var hasCss = _emitAllCss();
     transformMainHtml(document, fileInfo, _pathMapper, hasCss,
-        options.rewriteUrls, _messages, customPseudos: pseudoElements);
+        options.rewriteUrls, _messages);
 
     document.body.nodes.add(parseFragment(
         '<script type="application/dart" src="$bootstrapOutName"></script>'));

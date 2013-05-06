@@ -438,16 +438,11 @@ class StyleSheetEmitter extends CssPrinter {
       emit('#${_prefix}_${node.name}');
     }
   }
-
-  visitSelector(Selector node) {
-    super.visitSelector(node);
-  }
 }
 
 /** Helper function to emit the contents of the style tag. */
 String emitStyleSheet(StyleSheet ss, [String prefix]) =>
-  ((new StyleSheetEmitter(prefix))..
-      visitTree(ss, pretty: true)).toString();
+  ((new StyleSheetEmitter(prefix))..visitTree(ss, pretty: true)).toString();
 
 /** Generates the class corresponding to a single web component. */
 class WebComponentEmitter extends RecursiveEmitter {
@@ -705,9 +700,7 @@ String _emitCreateHtml(Node node, Declarations statics) {
 /** Trim down the html for the main html page. */
 void transformMainHtml(Document document, FileInfo fileInfo,
                        PathMapper pathMapper, bool hasCss, bool rewriteUrls,
-                       Messages messages, {Map<String, String> customPseudos}) {
-
-  customPseudos = customPseudos == null ? new Map() : customPseudos;
+                       Messages messages) {
   var filePath = fileInfo.inputPath;
 
   bool dartLoaderFound = false;
