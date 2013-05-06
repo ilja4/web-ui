@@ -8,7 +8,7 @@
  */
 library analyzer;
 
-import 'package:csslib/parser.dart' as Css;
+import 'package:csslib/parser.dart' as css;
 import 'package:csslib/visitor.dart' show StyleSheet, treeToDebugString, Visitor, Expressions, VarDefinition;
 import 'package:html5lib/dom.dart';
 import 'package:html5lib/dom_parsing.dart';
@@ -139,7 +139,7 @@ class _Analyzer extends TreeVisitor {
     if (node.tagName == 'body' || (_currentInfo is ComponentInfo
           && (_currentInfo as ComponentInfo).template == node)) {
       info.isRoot = true;
-      info.identifier = '_root';
+      info.identifier = '__root';
     }
 
     var lastInfo = _currentInfo;
@@ -1134,7 +1134,7 @@ class _AnalyzerCss {
     var styleSheets = _dependencies(libraryInfo).toList();
 
     var errors = [];
-    Css.analyze(styleSheets, errors: errors, options:
+    css.analyze(styleSheets, errors: errors, options:
       [_warningsAsErrors ? '--warnings_as_errors' : '', 'memory']);
 
     // Print errors as warnings.
