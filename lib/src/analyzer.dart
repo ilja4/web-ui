@@ -30,11 +30,12 @@ import 'utils.dart';
  * Adds emitted error/warning messages to [messages], if [messages] is
  * supplied.
  */
-FileInfo analyzeDefinitions(SourceFile file, String packageRoot,
+FileInfo analyzeDefinitions(UrlInfo inputUrl,
+    Document document, String packageRoot,
     Messages messages, {bool isEntryPoint: false}) {
-  var result = new FileInfo(file.path, isEntryPoint);
+  var result = new FileInfo(inputUrl, isEntryPoint);
   var loader = new _ElementLoader(result, packageRoot, messages);
-  loader.visit(file.document);
+  loader.visit(document);
   return result;
 }
 
@@ -47,7 +48,7 @@ FileInfo analyzeDefinitions(SourceFile file, String packageRoot,
  */
 FileInfo analyzeNodeForTesting(Node source, Messages messages,
     {String filepath: 'mock_testing_file.html'}) {
-  var result = new FileInfo(filepath);
+  var result = new FileInfo(new UrlInfo(filepath, filepath, null));
   new _Analyzer(result, new IntIterator(), new Map(), messages).visit(source);
   return result;
 }
@@ -718,12 +719,13 @@ class _Analyzer extends TreeVisitor {
    * Normalizes references in [info]. On the [analyzeDefinitions] phase, the
    * analyzer extracted names of files and components. Here we link those names
    * to actual info classes. In particular:
-   *   * we initialize the [components] map in [info] by importing all
+   *   * we initialize the [FileInfo.components] map in [info] by importing all
    *     [declaredComponents],
-   *   * we scan all [componentLinks] and import their [declaredComponents],
-   *     using [files] to map the href to the file info. Names in [info] will
-   *     shadow names from imported files.
-   *   * we fill [externalCode] on each component declared in [info].
+   *   * we scan all [info.componentLinks] and import their
+   *     [info.declaredComponents], using [files] to map the href to the file
+   *     info. Names in [info] will shadow names from imported files.
+   *   * we fill [LibraryInfo.externalCode] on each component declared in
+   *     [info].
    */
   void _normalize(FileInfo info, Map<String, FileInfo> files) {
     _attachExtenalScript(info, files);
@@ -853,8 +855,8 @@ class _ElementLoader extends TreeVisitor {
     }
 
     bool isStyleSheet = rel == 'stylesheet';
-    var urlInfo = UrlInfo.resolve(_packageRoot, _fileInfo.inputPath, href,
-        node.sourceSpan, isCss: isStyleSheet);
+    var urlInfo = UrlInfo.resolve(href, _fileInfo.inputUrl, node.sourceSpan,
+        _packageRoot, _messages, ignoreAbsolute: isStyleSheet);
     if (urlInfo == null) return;
     if (isStyleSheet) {
       _fileInfo.styleSheetHrefs.add(urlInfo);
@@ -969,15 +971,8 @@ class _ElementLoader extends TreeVisitor {
       if (_currentInfo.codeAttached) {
         _tooManyScriptsError(node);
       } else {
-        if (path.isAbsolute(src)) {
-          _messages.error(
-              'script tag should not use absolute path in attribute "src". '
-              'Got "src"="$src".', node.sourceSpan);
-        } else {
-          _currentInfo.externalFile = new UrlInfo(
-              path.normalize(path.join(path.dirname(_fileInfo.inputPath), src)),
-              node.sourceSpan);
-        }
+        _currentInfo.externalFile = UrlInfo.resolve(src, _fileInfo.inputUrl,
+            node.sourceSpan, _packageRoot, _messages);
       }
       return;
     }
@@ -997,7 +992,7 @@ class _ElementLoader extends TreeVisitor {
           'file.', node.sourceSpan);
     } else {
       _currentInfo.inlinedCode = parseDartCode(
-          _currentInfo.dartCodePath, text.value, _messages,
+          _currentInfo.dartCodeUrl.resolvedPath, text.value, _messages,
           text.sourceSpan.start);
       if (_currentInfo.userCode.partOf != null) {
         _messages.error('expected a library, not a part.',
@@ -1187,9 +1182,9 @@ class _AnalyzerCss {
     if (seen == null) seen = new Set();
 
     // Used to resolve all pathing information.
-    String inputPath = libraryInfo is FileInfo
-        ? libraryInfo.inputPath
-        : (libraryInfo as ComponentInfo).declaringFile.inputPath;
+    var inputUrl = libraryInfo is FileInfo
+        ? libraryInfo.inputUrl
+        : (libraryInfo as ComponentInfo).declaringFile.inputUrl;
 
     for (var styleSheet in libraryInfo.styleSheets) {
       if (!seen.contains(styleSheet)) {
@@ -1203,7 +1198,7 @@ class _AnalyzerCss {
 
         // Any other imports in this stylesheet?
         var urlInfos = findImportsInStyleSheet(styleSheet, packageRoot,
-            inputPath);
+            inputUrl, _messages);
 
         // Process other imports in this stylesheets.
         for (var importSS in urlInfos) {
@@ -1214,7 +1209,8 @@ class _AnalyzerCss {
             // Find dependencies for stylesheet referenced with a
             // @import
             for (var ss in importInfo.styleSheets) {
-              var urls = findImportsInStyleSheet(ss, packageRoot, inputPath);
+              var urls = findImportsInStyleSheet(ss, packageRoot, inputUrl,
+                  _messages);
               for (var url in urls) {
                 _dependencies(info[url.resolvedPath], seen: seen);
               }

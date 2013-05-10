@@ -16,6 +16,10 @@ import 'package:pathos/path.dart' show Builder;
  */
 Builder path = new Builder();
 
+/** Convert a OS specific path into a url. */
+String pathToUrl(String relPath) =>
+  (path.separator == '/') ? relPath : path.split(relPath).join('/');
+
 /**
  * Converts a string name with hyphens into an identifier, by removing hyphens
  * and capitalizing the following letter. Optionally [startUppercase] to
@@ -120,7 +124,7 @@ class FutureGroup {
    * Wait for [task] to complete.
    *
    * If this group has already been marked as completed, you'll get a
-   * [FutureAlreadyCompleteException].
+   * [StateError].
    *
    * If this group has a [failedTask], new tasks will be ignored, because the
    * error has already been signaled.
